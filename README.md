@@ -6,6 +6,7 @@ A GitHub Action that automatically identifies [User-Visible Improvements](https:
 
 - 🔍 Automatically detects user-visible improvements in PR changes and pushes
 - 🤖 Uses OpenAI's API for intelligent analysis
+- 🧠 Understands product context from README to provide more relevant results
 - 💬 Maintains an up-to-date comment in PRs listing all identified UVIs
 - 📊 Exposes UVI count and details as outputs for use in other workflow steps
 - 🔄 Updates automatically when changes are pushed
@@ -96,6 +97,24 @@ steps:
       echo "Found ${{ steps.uvi.outputs.uvi-count }} improvements"
       echo "Improvements: ${{ steps.uvi.outputs.uvi-list }}"
 ```
+
+## How It Works
+
+1. **Product Understanding**: The action first analyzes your project's README to understand:
+   - What your product does
+   - Who your users are
+   - How they use your product
+   This context helps ensure that identified improvements are relevant to your specific users.
+
+2. **Change Analysis**: Changes are analyzed in chunks to stay within OpenAI's context limits, with each chunk evaluated for:
+   - New features and functionality
+   - Bug fixes and error handling improvements
+   - UI and UX enhancements
+   - Performance optimizations
+   - Documentation updates
+
+3. **Output**: 
+   - Findings are added as PR comments and action outputs
 
 ## Action Output
 

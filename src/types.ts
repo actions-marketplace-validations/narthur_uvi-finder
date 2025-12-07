@@ -40,3 +40,11 @@ export interface UVI {
   category?: string;
   impact?: string;
 }
+
+export interface GetProductContextOptions {
+  octokit: ReturnType<typeof getOctokit>;
+  openai: OpenAI;
+  model: string;
+  owner: string;
+  repo: string;
+}

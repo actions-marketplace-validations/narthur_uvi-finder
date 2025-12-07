@@ -269,4 +269,147 @@ diff --git a/yarn.lock b/yarn.lock
     expect(calls[0][0].messages[1].content).not.toContain("yarn.lock");
     expect(calls[0][0].messages[1].content).toContain("src/index.ts");
   });
+
+  it("should understand product context from files", async () => {
+    const diff = `diff --git a/README.md b/README.md
+- A CLI tool for managing databases
++ A CLI tool for managing databases with improved error handling
+diff --git a/src/index.ts b/src/index.ts
++ throw new Error("Database connection failed: check your credentials");`;
+
+    const mockOctokit = {
+      rest: {
+        pulls: {
+          get: vi.fn().mockResolvedValue({ data: diff }),
+        },
+      },
+    };
+
+    const mockOpenAI = {
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    improvements: [
+                      {
+                        description: "Improved error messages for database connection failures",
+                        category: "Error Handling",
+                        impact: "Users now receive clearer feedback when connection fails",
+                      },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+        },
+      },
+    };
+
+    const result = await findUVIs({
+      octokit: mockOctokit as any,
+      openai: mockOpenAI as any,
+      model: "gpt-4",
+      owner: "test",
+      repo: "test",
+      pullNumber: 1,
+      base: "base-sha",
+      head: "head-sha",
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe("Improved error messages for database connection failures");
+    expect(result[0].category).toBe("Error Handling");
+    
+    // Verify that the model was given context about the product
+    const prompt = mockOpenAI.chat.completions.create.mock.calls[0][0].messages[1].content;
+    expect(prompt).toContain("A CLI tool for managing databases");
+  });
+
+  it("should use product context from README when available", async () => {
+    const mockReadme = `# Test Product
+A CLI tool for managing databases with advanced features.
+## Features
+- Easy database creation
+- Backup management
+- Performance monitoring`;
+
+    const mockOctokit = {
+      rest: {
+        repos: {
+          getContent: vi.fn().mockResolvedValue({
+            data: { content: Buffer.from(mockReadme).toString('base64') }
+          }),
+        },
+        pulls: {
+          get: vi.fn().mockResolvedValue({
+            data: `diff --git a/src/index.ts b/src/index.ts
++ console.log("Backup completed in 2.3s");`
+          }),
+        },
+      },
+    };
+
+    const mockOpenAI = {
+      chat: {
+        completions: {
+          create: vi.fn()
+            // First call for product context
+            .mockResolvedValueOnce({
+              choices: [
+                {
+                  message: {
+                    content: "A database management tool for users who need to create, backup, and monitor databases.",
+                  },
+                },
+              ],
+            })
+            // Second call for UVI analysis
+            .mockResolvedValueOnce({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      improvements: [
+                        {
+                          description: "Added backup completion time feedback",
+                          category: "User Feedback",
+                          impact: "Users can now see how long backups take",
+                        },
+                      ],
+                    }),
+                  },
+                },
+              ],
+            }),
+        },
+      },
+    };
+
+    const result = await findUVIs({
+      octokit: mockOctokit as any,
+      openai: mockOpenAI as any,
+      model: "gpt-4",
+      owner: "test",
+      repo: "test",
+      pullNumber: 1,
+      base: "base-sha",
+      head: "head-sha",
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe("Added backup completion time feedback");
+    
+    // Verify that the model was given product context
+    const contextCall = mockOpenAI.chat.completions.create.mock.calls[0];
+    expect(contextCall[0].messages[0].content).toContain("expert at understanding software products");
+    expect(contextCall[0].messages[1].content).toContain("managing databases");
+
+    // Verify that the UVI analysis included the product context
+    const analysisCall = mockOpenAI.chat.completions.create.mock.calls[1];
+    expect(analysisCall[0].messages[1].content).toContain("Product Context");
+  });
 });

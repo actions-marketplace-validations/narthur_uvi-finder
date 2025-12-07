@@ -1,9 +1,66 @@
-import type { FindUVIsOptions } from "./types.js";
+import type { FindUVIsOptions, GetProductContextOptions } from "./types.js";
 import { OpenAIResponseSchema } from "./schemas.js";
 import * as core from "@actions/core";
 
+const PRODUCT_CONTEXT_PROMPT = `You are an expert at understanding software products and their users.
+Your task is to analyze the provided README file and summarize:
+1. What the product does
+2. Who the users are
+3. What they use it for
+
+Keep your response brief and focused on the user perspective. Avoid technical implementation details.`;
+
+async function getProductContext(
+  options: GetProductContextOptions
+): Promise<string> {
+  const { octokit, openai, model, owner, repo } = options;
+
+  try {
+    // Get the README content
+    const { data } = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: "README.md",
+    });
+
+    // Extract content from the response
+    const content = Buffer.from(
+      "content" in data ? data.content : "",
+      "base64"
+    ).toString("utf8");
+
+    // Get OpenAI's understanding of the product
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: [
+        { role: "system", content: PRODUCT_CONTEXT_PROMPT },
+        { role: "user", content: content },
+      ],
+      temperature: 0.2,
+    });
+
+    const context = completion.choices[0]?.message?.content || "";
+
+    core.info(`Product context: ${context}`);
+
+    return context;
+  } catch (error: unknown) {
+    core.warning(
+      "Failed to get product context from README. Proceeding without it."
+    );
+    if (error instanceof Error) {
+      core.warning(error.message);
+    }
+    return "";
+  }
+}
+
 const SYSTEM_PROMPT = `You are an expert at identifying user-visible improvements (UVIs) in code changes.
 Your task is to analyze the provided code diff and identify ONLY changes that would be directly visible or meaningful to end users.
+
+First, look at the files being changed to understand the product's purpose and its users. This context will help you better identify what constitutes a meaningful improvement for this specific product.
+
+Then, analyze the changes to identify UVIs, considering:
 
 Include:
 - New features that users can see or interact with
@@ -21,6 +78,7 @@ Exclude:
 - Development tooling updates
 - Package updates that don't affect user experience
 - Internal documentation changes
+- Version number changes or version bumps (these are not UVIs themselves)
 
 Your response should be valid JSON with this exact structure:
 {
@@ -31,7 +89,9 @@ Your response should be valid JSON with this exact structure:
       "impact": "Optional description of the impact"
     }
   ]
-}`;
+}
+
+Important: Do not include version number changes as improvements. While version bumps often accompany UVIs, they are not UVIs themselves.`;
 
 const MAX_CHUNK_SIZE = 4000; // Conservative limit to leave room for prompts
 
@@ -99,6 +159,15 @@ function chunkDiff(diff: string): {
 export async function findUVIs(options: FindUVIsOptions) {
   const { octokit, openai, model, owner, repo } = options;
 
+  // Get product context first
+  const productContext = await getProductContext({
+    octokit,
+    openai,
+    model,
+    owner,
+    repo,
+  });
+
   // Get the diff either from PR or commit comparison
   let diffText;
   if ("pullNumber" in options) {
@@ -144,6 +213,14 @@ export async function findUVIs(options: FindUVIsOptions) {
       model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
+        ...(productContext
+          ? [
+              {
+                role: "user" as const,
+                content: `Product Context:\n${productContext}`,
+              },
+            ]
+          : []),
         {
           role: "user",
           content: `Please analyze this diff for user-visible improvements:\n\n${chunk}`,

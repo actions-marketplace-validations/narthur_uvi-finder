@@ -1,11 +1,11 @@
 {
   "name": "uvi-finder",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "GitHub Action to find user-visible improvements in pull requests",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "ncc build src/index.ts -o dist -m --license licenses.txt",
     "test": "vitest",
     "lint": "eslint .",
     "checkTs": "tsc --project tsconfig.dev.json --noEmit",
@@ -30,6 +30,7 @@
   "devDependencies": {
     "@eslint/js": "^9.25.1",
     "@types/node": "^20.10.5",
+    "@vercel/ncc": "^0.38.3",
     "eslint": "^9.25.1",
     "eslint-plugin-vitest": "^0.5.4",
     "globals": "^16.0.0",
